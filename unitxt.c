@@ -47,22 +47,72 @@ static struct cdev unitxtcdev;;
 /* PROTOTYPES */
 static int  _INIT unitxt_start(void);
 static void _EXIT unitxt_end(void);
+static int        unitxt_init_chardev(void);
 void              unitxt_init_txtmode(const uint8_t, const uint8_t, const uint8_t, const uint8_t, const uint8_t, const uint8_t);
-void              unitxt_print(char * str);
+void              unitxt_print(char *);
+#if defined(__linux__)
+	static int        unitxt_open(struct inode *, struct file *);
+	static int        unitxt_close(struct inode *, struct file *);
+	static size_t     unitxt_read(struct file *, char __user *, size_t, loff_);
+	static size_t     unitxt_write(struct inode *, struct file *);
+#elif defined(__NetBSD__) || defined(__OpenBSD__)
+	static int        unitxt_open(dev_t, int, int, struct lwp *);
+	static int        unitxt_close(dev_t, int, int, struct lwp *);
+	static int        unitxt_write(dev_t, struct uio *, int);
+	static int        unitxt_read(dev_t, struct uio *, int);
+#endif
+static void       txt_print(char *);
+static void       txt_putchar(const char);
+static void       txt_set(const uint8_t, const uint8_t, const uint16_t *);
+static uint64_t   ansi_interpreter(char *);
+static uint64_t   read_num(char **, uint8_t *);
 
 
 /* MODULE SETUP */
 #if defined(__linux__)
-	MODULE_LICENSE    ("CC0");
-	MODULE_AUTHOR     ("Niki");
+	MODULE_LICENSE("CC0");
+	MODULE_AUTHOR("Niki");
 	MODULE_DESCRIPTION("An alternative VGA textmode driver");
-	MODULE_VERSION    ("0.1");
+	MODULE_VERSION("0.1");
 	
 	module_init(unitxt_start);
 	module_exit(unitxt_end);
 #elif defined(__NetBSD__) || defined(__OpenBSD__)
 	MODULE(MODULE_CLASS_DRIVER, unitxt, NULL);
-	
+#endif
+
+
+/* UNTILS */
+static inline void _outb(const uint16_t port, const uint8_t value)
+{
+	#if defined(__linux__)
+		outb(value, port);
+	#elif defined(__NetBSD__) || defined(__OpenBSD__)
+		outb(port, value);
+	#endif
+}
+
+static inline void _notice(const char * msg)
+{
+	#if defined(__linux__)
+		printk(KERN_INFO "%s\n", msg);
+	#elif defined(__NetBSD__) || defined(__OpenBSD__)
+		kern_msg(LOG_NOTICE, msg);
+	#endif
+}
+
+static inline void _fail(const char * msg)
+{
+	#if defined(__linux__)
+		printk(KERN_ERR "%s\n", msg);
+	#elif defined(__NetBSD__) || defined(__OpenBSD__)
+		kern_msg(LOG_ERR, msg);
+	#endif
+}
+
+
+/* MODULE LOAD - UNLOAD */
+#if defined(__NetBSD__) || defined(__OpenBSD__)
 	static int unitxt_modcmd(modcmd_t cmd, void * args)
 	{
 		switch (cmd)
@@ -80,7 +130,6 @@ void              unitxt_print(char * str);
 	}
 #endif
 
-/* MODULE LOAD - UNLOAD */
 static int _INIT unitxt_start(void)
 {
 	init_txtmode(80, 25, 7, 0, 14, 15);
@@ -130,104 +179,41 @@ static int unitxt_init_chardev(void)
 }
 
 
-
-
 static int unitxt_open(struct inode * inode, struct file * file);
-static int unitxt_release(struct inode * inode, struct file * file);
+static int unitxt_close(struct inode * inode, struct file * file);
 static size_t unitxt_read(struct file * file, char __user * buf, size_t count, loff_);
 static size_t unitxt_write(struct inode * inode, struct file * file) *pos;
 
 
-static inline void _outb(const uint16_t port, const uint8_t value)
+/* TEXTMODE INTERFACE */
+static void txt_print(char * str)
 {
-	#if defined(__linux__)
-		outb(value, port);
-	#elif defined(__NetBSD__) || defined(__OpenBSD__)
-		outb(port, value);
-	#endif
-}
-
-static inline void _notice(const char * msg)
-{
-	#if defined(__linux__)
-		printk(KERN_INFO "%s\n", msg);
-	#elif defined(__NetBSD__) || defined(__OpenBSD__)
-		kern_msg(LOG_NOTICE, msg);
-	#endif
-}
-
-static inline void _fail(const char * msg)
-{
-	#if defined(__linux__)
-		printk(KERN_ERR "%s\n", msg);
-	#elif defined(__NetBSD__) || defined(__OpenBSD__)
-		kern_msg(LOG_ERR, msg);
-	#endif
-}
-
-static inline uint8_t vga_entry(const unsigned char c, const uint8_t col)
-{
-	return (uint16_t) c | (uint16_t) col << 8;
-}
-
-static inline void set_fg(const uint8_t col)
-{
-	cur_col &= col;
-}
-
-static inline void set_bg(const uint8_t col)
-{
-	cur_col &= col << 4;
-}
-
-static void set(const uint8_t start, const uint8_t end, const uint16_t * dt)
-{
-	uint8_t x = start;
-	while (x < end)
+	uint64_t c = 0;
+	uint8_t flags = 0x00;
+	while (str[c] != '\0')
 	{
-		buf[x] = dt ? dt[x] : vga_entry(' ', cur_col);
-		++x;
+		if (str[c] == '\033')
+		{
+			flags |= 1 << 1;
+			continue;
+		}
+		else if (flags & 0x01 << 1 && str[c] == '[')
+		{
+			flags &= ~(0x01 << 1);
+			flags |= 1 << 2;
+		}
+		else if (flags & 0x01 << 2)
+		{
+			c += ansi_interpreter(&str[c]);
+		}
+		else
+		{
+			txt_putchar(c);
+		}
 	}
 }
 
-static void def_cur(const uint8_t cur_start, const uint8_t cur_end)
-{
-	_outb(0x3D4, 0x0A);
-	_outb(0x3D5, (inb(0x3D5) & 0xC0) | cur_start);
-	_outb(0x3D4, 0x0B);
-	_outb(0x3D5, (inb(0x3D5) & 0xE0) | cur_end);
-}
-
-static void set_cur(const uint8_t x, const uint8_t y)
-{
-	const uint16_t pos = y * vga_w + x;
-	_outb(0x3D4, 0x0F);
-	_outb(0x3D5, (uint8_t) (pos & 0xFF));
-	_outb(0x3D4, 0x0E);
-	_outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF));
-}
-
-static void move_cursor(const uint8_t x, const uint8_t y)
-{
-	cur_x = min(x, vga_w);
-	cur_y = min(y, vga_h);
-	set_cur(x, y);
-}
-
-static void shift_ln(void)
-{
-	if (cur_y + 1 == vga_h)
-	{
-		set(0, vga_w * (vga_h - 1), &buf[vga_w]);
-	}
-	else
-	{
-		cur_y++;
-	}
-	cur_x = 0;
-}
-
-void txt_putchar(const char c)
+static void txt_putchar(const char c)
 {
 	const uint16_t sp = (cur_y * vga_w) + cur_x;
 	switch (c)
@@ -265,19 +251,9 @@ void txt_putchar(const char c)
 	}
 }
 
-static uint64_t read_num(char ** cp, uint8_t *num)
-{
-	uint64_t f = 0;
-	while (**cp >= '0' && **cp <= '9')
-	{
-		*num = *num * 10 + (**cp - '0');
-		++*cp;
-		++f;
-	}
-	return f;
-}
 
-static uint64_t ansi(char * cp)
+/* ANSI */
+static uint64_t ansi_interpreter(char * cp)
 {
 	uint64_t mv  = 0;
 	uint8_t  cou = 1;
@@ -324,14 +300,14 @@ static uint64_t ansi(char * cp)
 			switch (cou)
 			{
 				case 0:
-					set((vga_w * cur_y) + cur_x, vga_h * vga_w, NULL);
+					txt_set((vga_w * cur_y) + cur_x, vga_h * vga_w, NULL);
 					break;
 				case 1:
-					set(0, (vga_w * cur_y) + cur_x, NULL);
+					txt_set(0, (vga_w * cur_y) + cur_x, NULL);
 					break;
 				case 2:
 				case 3:
-					set(0, vga_w * vga_h, NULL);
+					txt_set(0, vga_w * vga_h, NULL);
 					break;
 			}
 			break;
@@ -339,10 +315,10 @@ static uint64_t ansi(char * cp)
 			switch (cou)
 			{
 				case 0:
-					set((vga_w * cur_y) + cur_x, vga_w * (cur_y + 1), NULL);
+					txt_set((vga_w * cur_y) + cur_x, vga_w * (cur_y + 1), NULL);
 					break;
 				case 1:
-					set(vga_w * cur_y, (vga_w * cur_y) + cur_x, NULL);
+					txt_set(vga_w * cur_y, (vga_w * cur_y) + cur_x, NULL);
 					break;
 			}
 			break;
@@ -371,35 +347,21 @@ static uint64_t ansi(char * cp)
 	return mv;
 }
 
-void txt_print(char * str)
+static uint64_t read_num(char ** cp, uint8_t *num)
 {
-	uint64_t c = 0;
-	uint8_t flags = 0x00;
-	while (str[c] != '\0')
+	uint64_t f = 0;
+	while (**cp >= '0' && **cp <= '9')
 	{
-		if (str[c] == '\033')
-		{
-			flags |= 1 << 1;
-			continue;
-		}
-		else if (flags & 0x01 << 1 && str[c] == '[')
-		{
-			flags &= ~(0x01 << 1);
-			flags |= 1 << 2;
-		}
-		else if (flags & 0x01 << 2)
-		{
-			c += ansi(&str[c]);
-		}
-		else
-		{
-			txt_putchar(c);
-		}
+		*num = *num * 10 + (**cp - '0');
+		++*cp;
+		++f;
 	}
+	return f;
 }
 
-// init_txtmode(80, 25, 7, 0, 14, 15)
-void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8_t b, const uint8_t start_cur, const uint8_t end_cur)
+
+/* TEXTMODE INTERNALS */
+static void unitxt_init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8_t b, const uint8_t start_cur, const uint8_t end_cur)
 {
 	vga_w = w;
 	vga_h = h;
@@ -408,8 +370,71 @@ void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8
 	buf = txtmode_addr;
 	cur_col = f | b << 4;
 	
-	set(0, vga_h * vga_w, NULL);
+	txt_set(0, vga_h * vga_w, NULL);
 	
 	def_cur(start_cur, end_cur);
 	_notice("unitxt initialized");
+}
+// init_txtmode(80, 25, 7, 0, 14, 15)
+
+static inline uint8_t vga_entry(const unsigned char c, const uint8_t col)
+{
+	return (uint16_t) c | (uint16_t) col << 8;
+}
+
+static inline void set_fg(const uint8_t col)
+{
+	cur_col &= col;
+}
+
+static inline void set_bg(const uint8_t col)
+{
+	cur_col &= col << 4;
+}
+
+static void txt_set(const uint8_t start, const uint8_t end, const uint16_t * dt)
+{
+	uint8_t x = start;
+	while (x < end)
+	{
+		buf[x] = dt ? dt[x] : vga_entry(' ', cur_col);
+		++x;
+	}
+}
+
+static void def_cur(const uint8_t cur_start, const uint8_t cur_end)
+{
+	_outb(0x3D4, 0x0A);
+	_outb(0x3D5, (inb(0x3D5) & 0xC0) | cur_start);
+	_outb(0x3D4, 0x0B);
+	_outb(0x3D5, (inb(0x3D5) & 0xE0) | cur_end);
+}
+
+static void set_cur(const uint8_t x, const uint8_t y)
+{
+	const uint16_t pos = y * vga_w + x;
+	_outb(0x3D4, 0x0F);
+	_outb(0x3D5, (uint8_t) (pos & 0xFF));
+	_outb(0x3D4, 0x0E);
+	_outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF));
+}
+
+static void move_cursor(const uint8_t x, const uint8_t y)
+{
+	cur_x = min(x, vga_w);
+	cur_y = min(y, vga_h);
+	set_cur(x, y);
+}
+
+static void shift_ln(void)
+{
+	if (cur_y + 1 == vga_h)
+	{
+		txt_set(0, vga_w * (vga_h - 1), &buf[vga_w]);
+	}
+	else
+	{
+		cur_y++;
+	}
+	cur_x = 0;
 }
