@@ -9,6 +9,7 @@
 	#include <linux/module.h>
 	#include <linux/kernel.h>
 	#include <linux/init.h>
+	#include <linux/fs.h>
 	#include <sys/io.h>
 	
 	#define _INIT __init
@@ -51,15 +52,15 @@ static int        unitxt_init_chardev(void);
 void              unitxt_init_txtmode(const uint8_t, const uint8_t, const uint8_t, const uint8_t, const uint8_t, const uint8_t);
 void              unitxt_print(char *);
 #if defined(__linux__)
-	static int        unitxt_open(struct inode *, struct file *);
-	static int        unitxt_close(struct inode *, struct file *);
-	static size_t     unitxt_read(struct file *, char __user *, size_t, loff_);
-	static size_t     unitxt_write(struct inode *, struct file *);
+	static int    unitxt_open(struct inode *, struct file *);
+	static int    unitxt_close(struct inode *, struct file *);
+	static size_t unitxt_read(struct file *, char __user *, size_t, loff_ *);
+	static size_t unitxt_write(struct file *, char __user *, size_t, loff_ *);
 #elif defined(__NetBSD__) || defined(__OpenBSD__)
-	static int        unitxt_open(dev_t, int, int, struct lwp *);
-	static int        unitxt_close(dev_t, int, int, struct lwp *);
-	static int        unitxt_write(dev_t, struct uio *, int);
-	static int        unitxt_read(dev_t, struct uio *, int);
+	static int    unitxt_open(dev_t, int, int, struct lwp *);
+	static int    unitxt_close(dev_t, int, int, struct lwp *);
+	static int    unitxt_write(dev_t, struct uio *, int);
+	static int    unitxt_read(dev_t, struct uio *, int);
 #endif
 static void       txt_print(char *);
 static void       txt_putchar(const char);
@@ -178,12 +179,65 @@ static int unitxt_init_chardev(void)
 	return 0;
 }
 
+static int unitxt_open(struct inode * inode, struct file * file)
+{
+	return 0;
+}
 
-static int unitxt_open(struct inode * inode, struct file * file);
-static int unitxt_close(struct inode * inode, struct file * file);
-static size_t unitxt_read(struct file * file, char __user * buf, size_t count, loff_);
-static size_t unitxt_write(struct inode * inode, struct file * file) *pos;
+static int unitxt_close(struct inode * inode, struct file * file)
+{
+	return 0;
+}
 
+static size_t unitxt_write(struct file * file, char __user * buf, size_t count, loff_ * offset)
+{
+	char *  data;
+	ssize_t written;
+	
+	if (!(date = kmalloc(count, GFP_KERNEL))
+	{
+		_fail("failed to allocate");
+		return -ENOMEM;
+	}
+	
+	if (copy_from_user(data, buf, count))
+	{
+		kfree(data);
+		return -EFAULT;
+	}
+	
+	unitxt_print(data);
+	
+	kfree(data);
+	written = count;
+	return written;
+}
+
+static size_t unitxt_read(struct file * file, char __user * buf, size_t count, loff_ * offset)
+{
+	const char   msg = "Unitxt Running";
+	const size_t len = strlen(msg);
+	
+	if (*offset >= len)
+	{
+		return 0;
+	}
+	
+	if (count > len - *offset)
+	{
+		count = len - *offset;
+	}
+	
+	if (copy_to_user(buf, msg + *offset, count))
+	{
+		_fail("copying to userspace failed");
+		return -EFAULT;
+	}
+	
+	*offset += count;
+	
+	return count;
+}
 
 /* TEXTMODE INTERFACE */
 static void txt_print(char * str)
