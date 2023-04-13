@@ -3,6 +3,7 @@
 
 void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8_t b, const uint8_t start_cur, const uint8_t end_cur);
 
+oeo ;
 #if defined(__linux__)
 	#include <linux/module.h>
 	#include <linux/kernel.h>
@@ -21,6 +22,7 @@ void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8
 #endif
 
 static const uint8_t tab_size = 8;
+static const uint16_t txtmode_addr = 0xB8000;
 
 static uint8_t vga_w, vga_h, cur_x, cur_y, cur_col;
 static uint16_t * buf;
@@ -88,7 +90,7 @@ void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8
 	vga_h = h;
 	move_cursor(0, 0);
 	
-	buf = (uint16_t *) 0xB8000;
+	buf = (uint16_t *) txtmode_addr;
 	cur_col = fg | bg << 4;
 	
 	set(0, vga_h * vga_w, NULL);
@@ -211,7 +213,43 @@ static uint64_t ansi(char * cp)
 			}
 			break;
 		case 'J':
+			switch (cou)
+			{
+				case 0:
+					set((vga_w * cur_y) + cur_x, vga_h * vga_w, NULL);
+					break;
+				case 1:
+					set(0, (vga_w * cur_y) + cur_x, NULL);
+					break;
+				case 2:
+				case 3:
+					set(0, vga_w * vga_h, NULL);
+					break;
+			}
 			break;
+		case 'K':
+			switch (cou)
+			{
+				case 0:
+					set((vga_w * cur_y) + cur_x, vga_w * (cur_y + 1), NULL);
+					break;
+				case 1:
+					set(vga_w * cur_y, (vga_w * cur_y) + cur_x, NULL);
+					break;
+			}
+		case 'S':
+		case 'T':
+			// undefined - this driver does not have a scrollback buffer
+			break;
+		case 'm':
+			if (cou >= 30 && cou <= 37)
+			{
+				set_fg(cou - 30);
+			}
+			else if (cou >= 40 && cou <= 47)
+			{
+				set_bg(cou - 40);
+			}
 	}
 	return mv;
 }
