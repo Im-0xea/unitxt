@@ -11,8 +11,29 @@
 	MODULE_VERSION("0.1");
 	static int __init unitxt_start(void)
 	{
+		int err;
+		dev_t dev;
+		
+		err = alloc_chrdev_region(&dev, 0, 1, "unitxt");
+		if (err < 0)
+		{
+			printk(KERN_ERR "failed to allocate device number\n";
+			return err;
+		}
+		major = MAJOR(dev);
+		
+		cdev_init(&unitxt_cdev, &unitxt_fops);
+		unitxt_cdev.owner = THIS_MODULE;
+		
+		err = cdev_add(&unitxt_cdev, dev, 1);
+		if (err < 0)
+		{
+			printk(KERN_ERR "failed to add device\n";
+			unregister_chrdev_region(MKDEV(major, 0), 1);
+			return err;
+		}
+		
 		init_txtmode(80, 25, 7, 0, 14, 15);
-		txt_print("uwu");
 		return 0;
 	}
 	static void __exit unitxt_end(void)
@@ -54,7 +75,7 @@ static uint8_t vga_w, vga_h, cur_x, cur_y, cur_col;
 static uint16_t * buf;
 
 static int major;;
-static struct cdev mycdev;;
+static struct cdev unitxtcdev;;
 
 static int unitxt_open(struct inode * inode, struct file * file);
 static int unitxt_release(struct inode * inode, struct file * file);
@@ -64,10 +85,10 @@ static size_t unitxt_write(struct inode * inode, struct file * file) *pos;
 static struct file_operations unitxt_fops =
 {
 	owner = THIS_MODULE,
-	open = mydevice_open,
-	release = mydevice_release,
-	read = mydevice_read,
-	write = mydevice_write
+	open = unitxt_open,
+	release = unitxt_release,
+	read = unitxt_read,
+	write = unitxt_write
 };
 
 static inline void _outb(const uint16_t port, const uint8_t value)
