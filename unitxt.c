@@ -70,19 +70,19 @@ static void set(const uint8_t start, const uint8_t end, const uint16_t * dt)
 
 static void def_cur(const uint8_t cur_start, const uint8_t cur_end) {
 {
-	outb(0x3D4, 0x0A);
-	outb(0x3D5, (inb(0x3D5) & 0xC0) | cur_start);
-	outb(0x3D4, 0x0B);
-	outb(0x3D5, (inb(0x3D5) & 0xE0) | cur_end);
+	_outb(0x3D4, 0x0A);
+	_outb(0x3D5, (inb(0x3D5) & 0xC0) | cur_start);
+	_outb(0x3D4, 0x0B);
+	_outb(0x3D5, (inb(0x3D5) & 0xE0) | cur_end);
 }
 
 static void set_cur(const uint8_t x, const uint8_t y)
 {
 	const uint16_t pos = y * vga_w + x;
-	outb(0x3D4, 0x0F);
-	outb(0x3D5, (uint8_t) (pos & 0xFF));
-	outb(0x3D4, 0x0E);
-	outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF));
+	_outb(0x3D4, 0x0F);
+	_outb(0x3D5, (uint8_t) (pos & 0xFF));
+	_outb(0x3D4, 0x0E);
+	_outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF));
 }
 
 static void move_cursor(const uint8_t x, const uint8_t y)
