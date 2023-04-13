@@ -9,29 +9,6 @@
 	MODULE_AUTHOR("Niki")
 	MODULE_DESCRIPTION("An alternative VGA textmode driver")
 	MODULE_VERSION("0.1")
-	static int __init unitxt_start(void)
-		int err
-		dev_t dev
-		
-		err = alloc_chrdev_region(&dev, 0, 1, "unitxt")
-		if (err < 0)
-			printk(KERN_ERR "failed to allocate device number\n"
-			return err
-		major = MAJOR(dev)
-		
-		cdev_init(&unitxt_cdev, &unitxt_fops)
-		unitxt_cdev.owner = THIS_MODULE
-		
-		err = cdev_add(&unitxt_cdev, dev, 1)
-		if (err < 0)
-			printk(KERN_ERR "failed to add device\n"
-			unregister_chrdev_region(MKDEV(major, 0), 1)
-			return err
-		
-		init_txtmode(80, 25, 7, 0, 14, 15)
-		return 0
-	static void __exit unitxt_end(void)
-		return
 	module_init(unitxt_start)
 	module_exit(unitxt_end)
 	#include <sys/io.h>
@@ -47,11 +24,35 @@
 				break
 			case MODULE_CMD_FINI:
 				break
-			default
+			default:
 				break
 		return 0
 #else
 	#error unsupported system
+	
+static int __init unitxt_start(void)
+	int err
+	dev_t dev
+	
+	err = alloc_chrdev_region(&dev, 0, 1, "unitxt")
+	if (err < 0)
+		printk(KERN_ERR "failed to allocate device number\n"
+		return err
+	major = MAJOR(dev)
+	
+	cdev_init(&unitxt_cdev, &unitxt_fops)
+	unitxt_cdev.owner = THIS_MODULE
+	
+	err = cdev_add(&unitxt_cdev, dev, 1)
+	if (err < 0)
+		printk(KERN_ERR "failed to add device\n"
+		unregister_chrdev_region(MKDEV(major, 0), 1)
+		return err
+	
+	init_txtmode(80, 25, 7, 0, 14, 15)
+	return 0
+static void __exit unitxt_end(void)
+	return
 
 static const uint8_t tab_size = 8
 static uint16_t * txtmode_addr = (uint16_t *) 0xB8000
