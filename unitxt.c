@@ -246,9 +246,17 @@ static uint64_t ansi(char * cp)
 			{
 				set_fg(cou - 30);
 			}
+			else if (cou >= 90 && cou <= 97)
+			{
+				set_fg((cou - 90) + 8);
+			}
 			else if (cou >= 40 && cou <= 47)
 			{
 				set_bg(cou - 40);
+			}
+			else if (cou >= 100 && cou <= 107)
+			{
+				set_bg((cou - 100) + 8);
 			}
 	}
 	return mv;
