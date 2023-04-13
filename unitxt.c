@@ -206,7 +206,7 @@ static uint64_t ansi(char * cp)
 		case ';':
 			++cp;
 			uint8_t sec = 1;
-			read_num(&cp, &sec);
+			mv += read_num(&cp, &sec);
 			if (*cp == 'H' || *cp == 'f')
 			{
 				move_cursor(sec, cou);
