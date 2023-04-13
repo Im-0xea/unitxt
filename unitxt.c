@@ -3,7 +3,6 @@
 
 void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8_t b, const uint8_t start_cur, const uint8_t end_cur);
 
-oeo ;
 #if defined(__linux__)
 	#include <linux/module.h>
 	#include <linux/kernel.h>
@@ -49,6 +48,16 @@ static inline uint8_t max(const uint8_t in, const uint8_t max)
 	return in < max ? in : max;
 }
 
+static inline void set_fg_color(const uint8_t col)
+{
+	cur_col &= col;
+}
+
+static inline void set_bg_color(const uint8_t col)
+{
+	cur_col &= col << 4;
+}
+
 static void set(const uint8_t start, const uint8_t end, const uint16_t * dt)
 {
 	uint8_t x = start;
@@ -76,26 +85,11 @@ static void set_cur(const uint8_t x, const uint8_t y)
 	outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF));
 }
 
-void move_cursor(const uint8_t x, const uint8_t y)
+static void move_cursor(const uint8_t x, const uint8_t y)
 {
 	cur_x = max(x, vga_w);
 	cur_y = max(y, vga_h);
 	set_cur(x, y);
-}
-
-// init_txtmode(80, 25, 7, 0, 14, 15)
-void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8_t b, const uint8_t start_cur, const uint8_t end_cur)
-{
-	vga_w = w;
-	vga_h = h;
-	move_cursor(0, 0);
-	
-	buf = (uint16_t *) txtmode_addr;
-	cur_col = fg | bg << 4;
-	
-	set(0, vga_h * vga_w, NULL);
-	
-	def_cur(start_cur, end_cur);
 }
 
 static void shift_ln(void)
@@ -147,16 +141,6 @@ void putchar(const char c)
 	}
 }
 
-void set_fg_color(const uint8_t col)
-{
-	cur_col &= col;
-}
-
-void set_bg_color(const uint8_t col)
-{
-	cur_col &= col << 4;
-}
-
 static uint64_t read_num(char ** cp, uint8_t *num)
 {
 	uint64_t f = 0;
@@ -206,7 +190,7 @@ static uint64_t ansi(char * cp)
 		case ';':
 			++cp;
 			uint8_t sec = 1;
-			mv += read_num(&cp, &sec);
+			read_num(&cp, &sec);
 			if (*cp == 'H' || *cp == 'f')
 			{
 				move_cursor(sec, cou);
@@ -287,4 +271,19 @@ void print(const char * str)
 			putchar(c);
 		}
 	}
+}
+
+// init_txtmode(80, 25, 7, 0, 14, 15)
+void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8_t b, const uint8_t start_cur, const uint8_t end_cur)
+{
+	vga_w = w;
+	vga_h = h;
+	move_cursor(0, 0);
+	
+	buf = (uint16_t *) txtmode_addr;
+	cur_col = fg | bg << 4;
+	
+	set(0, vga_h * vga_w, NULL);
+	
+	def_cur(start_cur, end_cur);
 }
