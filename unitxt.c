@@ -38,6 +38,15 @@ static inline void _outb(const uint8_t value, const uint16_t port)
 	#endif
 }
 
+static inline void _notice(const char * msg)
+{
+	#if defined(__linux__)
+		printk(KERN_INFO "%s\n", msg);
+	#elif defined(__NetBSD__)
+		kern_msg(LOG_NOTICE, msg);
+	#endif
+}
+
 static inline uint8_t vga_entry(const unsigned char c, const uint8_t col)
 {
 	return (uint16_t) c | (uint16_t) col << 8;
@@ -286,4 +295,5 @@ void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8
 	set(0, vga_h * vga_w, NULL);
 	
 	def_cur(start_cur, end_cur);
+	_notice("unitxt initialized");
 }
