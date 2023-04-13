@@ -1,79 +1,125 @@
+/*          *
+ *  unitxt  *
+ *          */
+
+
+/* INCLUDES */
 #if defined(__linux__)
 	#include <linux/types.h>
-	void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8_t b, const uint8_t start_cur, const uint8_t end_cur)
-	void txt_print(char * str)
 	#include <linux/module.h>
 	#include <linux/kernel.h>
 	#include <linux/init.h>
-	MODULE_LICENSE("CC0")
-	MODULE_AUTHOR("Niki")
-	MODULE_DESCRIPTION("An alternative VGA textmode driver")
-	MODULE_VERSION("0.1")
-	module_init(unitxt_start)
-	module_exit(unitxt_end)
 	#include <sys/io.h>
+	
+	#define _INIT __init
+	#define _EXIT __exit
 #elif defined(__NetBSD__) || defined(__OpenBSD__)
+	#include <sys/types.h>
+	#include <sys/conf.h>
+	#include <sys/device.h>
+	#include <sys/kernel.h>
+	#include <sys/systm.h>
+	#include <sys/module.h>
 	#include <machine/pio.h>
 	#include <syslog.h>
-	MODULE(MODULE_CLASS_DRIVER, unitxt, NULL)
 	
-	static int unitxt_modcmd(modcmd_t cmd, void * args)
-		switch (cmd)
-			case MODULE_CMD_INIT:
-				init_txtmode(80, 25, 7, 0, 14, 15)
-				break
-			case MODULE_CMD_FINI:
-				break
-			default:
-				break
-		return 0
+	#define _INIT
+	#define _EXIT
 #else
 	#error unsupported system
-	
-static int __init unitxt_start(void)
-	int err
-	dev_t dev
-	
-	err = alloc_chrdev_region(&dev, 0, 1, "unitxt")
-	if (err < 0)
-		printk(KERN_ERR "failed to allocate device number\n"
-		return err
-	major = MAJOR(dev)
-	
-	cdev_init(&unitxt_cdev, &unitxt_fops)
-	unitxt_cdev.owner = THIS_MODULE
-	
-	err = cdev_add(&unitxt_cdev, dev, 1)
-	if (err < 0)
-		printk(KERN_ERR "failed to add device\n"
-		unregister_chrdev_region(MKDEV(major, 0), 1)
-		return err
-	
-	init_txtmode(80, 25, 7, 0, 14, 15)
-	return 0
-static void __exit unitxt_end(void)
-	return
 
+
+/* CONSTANTS */
+#define DEVICE_NAME "unitxt"
 static const uint8_t tab_size = 8
 static uint16_t * txtmode_addr = (uint16_t *) 0xB8000
 
+
+/* GLOBALS */
 static uint8_t vga_w, vga_h, cur_x, cur_y, cur_col
 static uint16_t * buf
 
 static int major;
 static struct cdev unitxtcdev;
 
+
+/* PROTOTYPES */
+static int  _INIT unitxt_start(void)
+static void _EXIT unitxt_end(void)
+void              unitxt_init_txtmode(const uint8_t, const uint8_t, const uint8_t, const uint8_t, const uint8_t, const uint8_t)
+void              unitxt_print(char * str)
+
+
+/* MODULE SETUP */
+#if defined(__linux__)
+	MODULE_LICENSE    ("CC0")
+	MODULE_AUTHOR     ("Niki")
+	MODULE_DESCRIPTION("An alternative VGA textmode driver")
+	MODULE_VERSION    ("0.1")
+	
+	module_init(unitxt_start)
+	module_exit(unitxt_end)
+#elif defined(__NetBSD__) || defined(__OpenBSD__)
+	MODULE(MODULE_CLASS_DRIVER, unitxt, NULL)
+	
+	static int unitxt_modcmd(modcmd_t cmd, void * args)
+		switch (cmd)
+			case MODULE_CMD_INIT:
+				unitxt_start()
+				break
+			case MODULE_CMD_FINI:
+				unitxt_end()
+				break
+			default:
+				break
+		return 0
+
+/* MODULE LOAD - UNLOAD */
+static int _INIT unitxt_start(void)
+	init_txtmode(80, 25, 7, 0, 14, 15)
+	
+	return unitxt_init_chardev()
+
+static void _EXIT unitxt_end(void)
+	return
+
+
+/* CHAR DEV */
+#if defined(__linux__)
+	static struct file_operations unitxt_fops =
+		owner    = THIS_MODULE
+		open     = unitxt_open
+		release  = unitxt_close
+		read     = unitxt_read
+		write    = unitxt_write
+#elif defined(__NetBSD__) || defined(__OpenBSD__)
+	static struct cdevsw unitxt_cdevsw =
+		.d_open  = unitxt_open
+		.d_close = unitxt_close
+		.d_read  = unitxt_read
+		.d_write = unitxt_write
+		
+		.d_ioctl    = noioctl
+		.d_stop     = nostop
+		.d_tty      = notty
+		.d_poll     = nopoll
+		.d_mmap     = nommap
+		.d_kqfilter = nokqfilter
+		.d_discard  = nodiscard
+		.d_flag     = D_OTHER
+
+static int unitxt_init_chardev(void)
+	major = register_chrdev(0, DEVICE_NAME, &fops
+	return 0
+
+
+
+
 static int unitxt_open(struct inode * inode, struct file * file)
 static int unitxt_release(struct inode * inode, struct file * file)
 static size_t unitxt_read(struct file * file, char __user * buf, size_t count, loff_)
 static size_t unitxt_write(struct inode * inode, struct file * file) *pos
 
-static struct file_operations unitxt_fops =
-	owner = THIS_MODULE
-	open = unitxt_open
-	release = unitxt_release
-	read = unitxt_read
-	write = unitxt_write
 
 static inline void _outb(const uint16_t port, const uint8_t value)
 	#if defined(__linux__)
@@ -86,6 +132,12 @@ static inline void _notice(const char * msg)
 		printk(KERN_INFO "%s\n", msg)
 	#elif defined(__NetBSD__) || defined(__OpenBSD__)
 		kern_msg(LOG_NOTICE, msg)
+
+static inline void _fail(const char * msg)
+	#if defined(__linux__)
+		printk(KERN_ERR "%s\n", msg)
+	#elif defined(__NetBSD__) || defined(__OpenBSD__)
+		kern_msg(LOG_ERR, msg)
 
 static inline uint8_t vga_entry(const unsigned char c, const uint8_t col)
 	return (uint16_t) c | (uint16_t) col << 8
