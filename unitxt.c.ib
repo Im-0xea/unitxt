@@ -1,9 +1,7 @@
-#include <stddef.h>
-#include <stdint.h>
-
-void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8_t b, const uint8_t start_cur, const uint8_t end_cur)
-
 #if defined(__linux__)
+	#include <linux/types.h>
+	void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8_t b, const uint8_t start_cur, const uint8_t end_cur)
+	void txt_print(char * str)
 	#include <linux/module.h>
 	#include <linux/kernel.h>
 	#include <linux/init.h>
@@ -11,13 +9,14 @@ void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8
 	MODULE_AUTHOR("Niki")
 	MODULE_DESCRIPTION("An alternative VGA textmode driver")
 	MODULE_VERSION("0.1")
-	static int _init hello_start(void)
-		init_txtmode()
+	static int __init unitxt_start(void)
+		init_txtmode(80, 25, 7, 0, 14, 15)
+		txt_print("uwu")
 		return 0
-	static void __exit hello_end(void)
+	static void __exit unitxt_end(void)
 		return
-	module_init(_init)
-	module_exit(__exit)
+	module_init(unitxt_start)
+	module_exit(unitxt_end)
 	#include <sys/io.h>
 #elif defined(__NetBSD__) || defined(__OpenBSD__)
 	#include <machine/pio.h>
@@ -27,7 +26,7 @@ void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8
 	static int unitxt_modcmd(modcmd_t cmd, void * args)
 		switch (cmd)
 			case MODULE_CMD_INIT:
-				init_txtmode()
+				init_txtmode(80, 25, 7, 0, 14, 15)
 				break
 			case MODULE_CMD_FINI:
 				break
@@ -38,12 +37,27 @@ void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8
 	#error unsupported system
 
 static const uint8_t tab_size = 8
-static const uint16_t txtmode_addr = 0xB8000
+static uint16_t * txtmode_addr = (uint16_t *) 0xB8000
 
 static uint8_t vga_w, vga_h, cur_x, cur_y, cur_col
 static uint16_t * buf
 
-static inline void _outb(const uint8_t value, const uint16_t port)
+static int major;
+static struct cdev mycdev;
+
+static int unitxt_open(struct inode * inode, struct file * file)
+static int unitxt_release(struct inode * inode, struct file * file)
+static size_t unitxt_read(struct file * file, char __user * buf, size_t count, loff_)
+static size_t unitxt_write(struct inode * inode, struct file * file) *pos
+
+static struct file_operations unitxt_fops =
+	owner = THIS_MODULE
+	open = mydevice_open
+	release = mydevice_release
+	read = mydevice_read
+	write = mydevice_write
+
+static inline void _outb(const uint16_t port, const uint8_t value)
 	#if defined(__linux__)
 		outb(value, port)
 	#elif defined(__NetBSD__) || defined(__OpenBSD__)
@@ -58,22 +72,19 @@ static inline void _notice(const char * msg)
 static inline uint8_t vga_entry(const unsigned char c, const uint8_t col)
 	return (uint16_t) c | (uint16_t) col << 8
 
-static inline uint8_t max(const uint8_t in, const uint8_t max)
-	return in < max ? in : max
-
-static inline void set_fg_color(const uint8_t col)
+static inline void set_fg(const uint8_t col)
 	cur_col &= col
 
-static inline void set_bg_color(const uint8_t col)
+static inline void set_bg(const uint8_t col)
 	cur_col &= col << 4
 
 static void set(const uint8_t start, const uint8_t end, const uint16_t * dt)
 	uint8_t x = start
 	while (x < end)
-		buf[ln][x] = dt ? dt[x] : vga_entry(' ', cur_col)
+		buf[x] = dt ? dt[x] : vga_entry(' ', cur_col)
 		++x
 
-static void def_cur(const uint8_t cur_start, const uint8_t cur_end) {
+static void def_cur(const uint8_t cur_start, const uint8_t cur_end)
 	_outb(0x3D4, 0x0A)
 	_outb(0x3D5, (inb(0x3D5) & 0xC0) | cur_start)
 	_outb(0x3D4, 0x0B)
@@ -87,8 +98,8 @@ static void set_cur(const uint8_t x, const uint8_t y)
 	_outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF))
 
 static void move_cursor(const uint8_t x, const uint8_t y)
-	cur_x = max(x, vga_w)
-	cur_y = max(y, vga_h)
+	cur_x = min(x, vga_w)
+	cur_y = min(y, vga_h)
 	set_cur(x, y)
 
 static void shift_ln(void)
@@ -98,14 +109,16 @@ static void shift_ln(void)
 		cur_y++
 	cur_x = 0
 
-void putchar(const char c)
+void txt_putchar(const char c)
 	const uint16_t sp = (cur_y * vga_w) + cur_x
 	switch (c)
 		case '\r':
 			cur_x = 0
 			set_cur(cur_x, cur_y)
+			break
 		case '\n':
 			shift_ln()
+			break
 		case '\0':
 			break
 		case '\b':
@@ -135,6 +148,7 @@ static uint64_t read_num(char ** cp, uint8_t *num)
 static uint64_t ansi(char * cp)
 	uint64_t mv  = 0
 	uint8_t  cou = 1
+	uint8_t sec = 1
 	
 	mv += read_num(&cp, &cou)
 	
@@ -164,7 +178,6 @@ static uint64_t ansi(char * cp)
 			break
 		case ';':
 			++cp
-			uint8_t sec = 1
 			read_num(&cp, &sec)
 			if (*cp == 'H' || *cp == 'f')
 				move_cursor(sec, cou)
@@ -190,6 +203,7 @@ static uint64_t ansi(char * cp)
 				case 1:
 					set(vga_w * cur_y, (vga_w * cur_y) + cur_x, NULL)
 					break
+			break
 		case 'S':
 		case 'T':
 			// undefined - this driver does not have a scrollback buffer
@@ -205,7 +219,7 @@ static uint64_t ansi(char * cp)
 				set_bg((cou - 100) + 8)
 	return mv
 
-void print(const char * str)
+void txt_print(char * str)
 	uint64_t c = 0
 	uint8_t flags = 0x00
 	while (str[c] != '\0')
@@ -218,7 +232,7 @@ void print(const char * str)
 		else if (flags & 0x01 << 2)
 			c += ansi(&str[c])
 		else
-			putchar(c)
+			txt_putchar(c)
 
 // init_txtmode(80, 25, 7, 0, 14, 15)
 void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8_t b, const uint8_t start_cur, const uint8_t end_cur)
@@ -226,8 +240,8 @@ void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8
 	vga_h = h
 	move_cursor(0, 0)
 	
-	buf = (uint16_t *) txtmode_addr
-	cur_col = fg | bg << 4
+	buf = txtmode_addr
+	cur_col = f | b << 4
 	
 	set(0, vga_h * vga_w, NULL)
 	
