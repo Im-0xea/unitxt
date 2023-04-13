@@ -11,11 +11,29 @@ void init_txtmode(const uint8_t w, const uint8_t h, const uint8_t f, const uint8
 	MODULE_AUTHOR("Niki")
 	MODULE_DESCRIPTION("An alternative VGA textmode driver")
 	MODULE_VERSION("0.1")
-	module_init(init_txtmode)
-	//module_exit()
+	static int _init hello_start(void)
+		init_txtmode()
+		return 0
+	static void __exit hello_end(void)
+		return
+	module_init(_init)
+	module_exit(__exit)
 	#include <sys/io.h>
-#elif defined(__NetBSD__)
-	#include <sys/bus.h>
+#elif defined(__NetBSD__) || defined(__OpenBSD__)
+	#include <machine/pio.h>
+	#include <syslog.h>
+	MODULE(MODULE_CLASS_DRIVER, unitxt, NULL)
+	
+	static int unitxt_modcmd(modcmd_t cmd, void * args)
+		switch (cmd)
+			case MODULE_CMD_INIT:
+				init_txtmode()
+				break
+			case MODULE_CMD_FINI:
+				break
+			default
+				break
+		return 0
 #else
 	#error unsupported system
 
@@ -28,16 +46,13 @@ static uint16_t * buf
 static inline void _outb(const uint8_t value, const uint16_t port)
 	#if defined(__linux__)
 		outb(value, port)
-	#elif defined(__NetBSD__)
-		bus_space_handle_t port_handle
-		bus_space_map(port, 1, BUS_SPACE_MAP_LINEAR, &port_handle)
-		bus_space_write_1(port_handle, 0, data)
-		bus_space_unmap(port_handle, 1)
+	#elif defined(__NetBSD__) || defined(__OpenBSD__)
+		outb(port, value)
 
 static inline void _notice(const char * msg)
 	#if defined(__linux__)
 		printk(KERN_INFO "%s\n", msg)
-	#elif defined(__NetBSD__)
+	#elif defined(__NetBSD__) || defined(__OpenBSD__)
 		kern_msg(LOG_NOTICE, msg)
 
 static inline uint8_t vga_entry(const unsigned char c, const uint8_t col)
