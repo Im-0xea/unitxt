@@ -26,7 +26,7 @@ static inline uint8_t vga_entry_color(const uint8_t fg, const uint8_t bg)
 	return fg | bg << 4
 
 static inline uint8_t vga_entry(const unsigned char c, const uint8_t col)
-	return (uint16_t) c | (uint16_t) col << 8;
+	return (uint16_t) c | (uint16_t) col << 8
 
 static inline uint8_t max(const uint8_t in, const uint8_t max)
 	return in < max ? in : max
@@ -38,17 +38,17 @@ static void set(const uint8_t start, const uint8_t end, const uint16_t * dt)
 		++x
 
 static void def_cur(const uint8_t cur_start, const uint8_t cur_end) {
-	outb(0x3D4, 0x0A);
-	outb(0x3D5, (inb(0x3D5) & 0xC0) | cur_start);
-	outb(0x3D4, 0x0B);
-	outb(0x3D5, (inb(0x3D5) & 0xE0) | cur_end);
+	outb(0x3D4, 0x0A)
+	outb(0x3D5, (inb(0x3D5) & 0xC0) | cur_start)
+	outb(0x3D4, 0x0B)
+	outb(0x3D5, (inb(0x3D5) & 0xE0) | cur_end)
 
 static void set_cur(const uint8_t x, const uint8_t y)
-	const uint16_t pos = y * vga_w + x;
-	outb(0x3D4, 0x0F);
-	outb(0x3D5, (uint8_t) (pos & 0xFF));
-	outb(0x3D4, 0x0E);
-	outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF));
+	const uint16_t pos = y * vga_w + x
+	outb(0x3D4, 0x0F)
+	outb(0x3D5, (uint8_t) (pos & 0xFF))
+	outb(0x3D4, 0x0E)
+	outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF))
 
 void move_cursor(const uint8_t x, const uint8_t y)
 	cur_x = max(x, vga_w)
@@ -149,8 +149,11 @@ static uint64_t ansi(char * cp)
 			++cp
 			uint8_t sec = 1
 			read_num(&cp, &sec)
-			if (*cp == 'H')
+			if (*cp == 'H' || *cp == 'f')
 				move_cursor(sec, cou)
+			break
+		case 'J':
+			break
 	return mv
 
 void print(const char * str)
