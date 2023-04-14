@@ -75,10 +75,10 @@ static void        move_cursor(const uint8_t, const uint8_t);
 
 /* MODULE SETUP */
 #if defined(__linux__)
-	MODULE_LICENSE    ("CC0");
-	MODULE_AUTHOR     ("Niki");
-	MODULE_DESCRIPTION("An alternative VGA textmode driver");
-	MODULE_VERSION    ("0.1");
+	MODULE_LICENSE     ("CC0");
+	MODULE_AUTHOR      ("Niki");
+	MODULE_DESCRIPTION ("An alternative VGA textmode driver");
+	MODULE_VERSION     ("0.1");
 	
 	module_init(unitxt_start);
 	module_exit(unitxt_end);
@@ -94,6 +94,34 @@ static inline void _outb(const uint16_t port, const uint8_t value)
 		outb(value, port);
 	#elif defined(__NetBSD__) || defined(__OpenBSD__)
 		outb(port, value);
+	#endif
+}
+
+static inline uint8_t _inb(const uint16_t port)
+{
+	#if defined(__linux__)
+		return 0;
+		//return outb(value, port)
+	#elif defined(__NetBSD__) || defined(__OpenBSD__)
+		return outb(port, value);
+	#endif
+}
+
+static void * _malloc(const size_t size)
+{
+	#if defined(__linux__)
+		return kmalloc(size, GFP_KERNEL);
+	#elif defined(__NetBSD__) || defined(__OpenBSD__)
+		return kmem_alloc(size, KM_SLEEP);
+	#endif
+}
+
+static int _ucopy(char * dest, char * src, size_t count)
+{
+	#if defined(__linux__)
+		return copy_from_user(dest, src, count);
+	#elif defined(__NetBSD__) || defined(__OpenBSD__)
+		uio.move(dest, count);
 	#endif
 }
 
@@ -161,6 +189,10 @@ static void _EXIT unitxt_end(void)
 		.write    = unitxt_write
 	};
 #elif defined(__NetBSD__) || defined(__OpenBSD__)
+	dev_type_open(unitxt_open);
+	dev_type_close(unitxt_close);
+	dev_type_write(unitxt_write);
+	dev_type_read(unitxt_read);
 	static struct cdevsw unitxt_cdevsw =
 	{
 		.d_open   = unitxt_open,
@@ -181,31 +213,53 @@ static void _EXIT unitxt_end(void)
 
 static int unitxt_init_chardev(void)
 {
-	major = register_chrdev(0, DEVICE_NAME, &unitxt_fops);
+	#if defined(__linux__)
+		major = register_chrdev(0, DEVICE_NAME, &unitxt_fops);
+	#elif defined(__NetBSD__) || defined(__OpenBSD__)
+		devsw_attach("rperm", NULL, &bmajor, &unitxt_cdevsw, &cmajor);
+	#endif
 	return 0;
 }
 
 static int unitxt_stop_chardev(void)
 {
-	unregister_chrdev(major, DEVICE_NAME);
+	#if defined(__linux__)
+		unregister_chrdev(major, DEVICE_NAME);
+	#elif defined(__NetBSD__) || defined(__OpenBSD__)
+		devsw_detach(NULL, &unitxt_cdevsw);
+	#endif
 	return 0;
 }
 
-static int unitxt_open(struct inode * inode, struct file * file)
-{
-	return 0;
-}
+#if defined(__linux__)
+	static int unitxt_open(struct inode * inode, struct file * file)
+	{
+		return 0;
+	}
+#elif defined(__NetBSD__) || defined(__OpenBSD__)
+	static int unitxt_open(dev_t self, int flag, int mod, struct lwp * l)
+	{
+		return 0;
+	}
+#endif
 
-static int unitxt_close(struct inode * inode, struct file * file)
-{
-	return 0;
-}
+#if defined(__linux__)
+	static int unitxt_close(struct inode * inode, struct file * file)
+	{
+		return 0;
+	}
+#elif defined(__NetBSD__) || defined(__OpenBSD__)
+	static int unitxt_close(dev_t self, int flag, int mod, struct lwp * l)
+	{
+		return 0;
+	}
+#endif
 
 static ssize_t unitxt_write(struct file * file, const char __user * buf, size_t count, loff_t * offset)
 {
 	char *  data;
 	
-	if (!(data = kmalloc(count, GFP_KERNEL)))
+	if (!(data = _malloc(count)))
 	{
 		_fail("failed to allocate");
 		return -ENOMEM;
@@ -469,9 +523,9 @@ static void txt_set(const uint8_t start, const uint8_t end, const uint16_t * dt)
 static void def_cur(const uint8_t cur_start, const uint8_t cur_end)
 {
 	_outb(0x3D4, 0x0A);
-	_outb(0x3D5, (inb(0x3D5) & 0xC0) | cur_start);
+	_outb(0x3D5, (_inb(0x3D5) & 0xC0) | cur_start);
 	_outb(0x3D4, 0x0B);
-	_outb(0x3D5, (inb(0x3D5) & 0xE0) | cur_end);
+	_outb(0x3D5, (_inb(0x3D5) & 0xE0) | cur_end);
 }
 
 static void set_cur(const uint8_t x, const uint8_t y)
