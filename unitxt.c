@@ -132,7 +132,7 @@ static int p_ucopy(char * dest, char * src, size_t count)
 	#endif
 }
 
-static inline void p_notice(const char * msg)
+static inline void p_notice(char * msg)
 {
 	#if defined(__linux__)
 		printk(KERN_INFO "%s\n", msg);
@@ -141,7 +141,7 @@ static inline void p_notice(const char * msg)
 	#endif
 }
 
-static inline void p_fail(const char * msg)
+static inline void p_fail(char * msg)
 {
 	#if defined(__linux__)
 		printk(KERN_ERR "%s\n", msg);
@@ -150,6 +150,21 @@ static inline void p_fail(const char * msg)
 	#endif
 }
 
+#define p_failf(fmt, ...) formater(p_fail, fmt, ##__VA_ARGS__)
+#define p_noticef(fmt, ...) formater(p_notice, fmt, ##__VA_ARGS__)
+#define txt_printf(fmt, ...) formater(txt_print, fmt, ##__VA_ARGS__)
+
+static void formater(void (*d_print)(char *), const char * fmt, ...)
+{
+	char buf[256];
+	va_list args;
+	
+	va_start(args, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, args);
+	va_end(args);
+	
+	d_print(buf);
+}
 
 /* MODULE LOAD - UNLOAD */
 #if defined(__NetBSD__) || defined(__OpenBSD__)
@@ -221,6 +236,7 @@ static int unitxt_init_chardev(void)
 {
 	#if defined(__linux__)
 		major = register_chrdev(0, DEVICE_NAME, &unitxt_fops);
+		p_noticef("unitxt chardev on major %d", major);
 	#elif defined(__NetBSD__) || defined(__OpenBSD__)
 		devsw_attach("rperm", NULL, &bmajor, &unitxt_cdevsw, &cmajor);
 	#endif
@@ -349,18 +365,6 @@ static int unitxt_stop_chardev(void)
 static inline uint8_t vga_entry(const unsigned char c, const uint8_t col)
 {
 	return (uint16_t) c | (uint16_t) col << 8;
-}
-
-void txt_printf(const char * fmt, ...)
-{
-	char buf[256];
-	va_list args;
-	
-	va_start(args, fmt);
-	vsnprintf(buf, sizeof(buf), fmt, args);
-	va_end(args);
-	
-	txt_print(buf);
 }
 
 static void txt_print(char * str)
