@@ -13,10 +13,7 @@
 	#include <linux/fs.h>
 	#include <linux/string.h>
 	
-	//#if defined(__arm__) || defined(__aarch64__)
 	#include <asm/io.h>
-	//#else
-	//#include <sys/io.h>
 	
 	#define _INIT __init
 	#define _EXIT __exit
@@ -28,8 +25,7 @@
 	#include <sys/systm.h>
 	#include <sys/module.h>
 	#include <syslog.h>
-	//#if defined(__arm__) || defined(__aarch64__)
-	//#else
+	
 	#include <machine/pio.h>
 	
 	#define _INIT
@@ -46,7 +42,7 @@ static uint16_t *    txtmode_addr = (uint16_t *) 0xB8000;
 
 
 /* GLOBALS */
-static uint8_t    vga_w, vga_h, cur_x, cur_y, cur_col;
+static uint8_t    vga_w, vga_h, cur_x, cur_y, cur_attr;
 static uint16_t * buf;
 
 static int        major;
@@ -428,7 +424,7 @@ static void txt_putchar(const char c)
 			}
 			break;
 		default:
-			const uint16_t ent = vga_entry(c, cur_col);
+			const uint16_t ent = vga_entry(c, cur_attr);
 			txt_set(sp, sp + 1, &ent);
 	}
 }
@@ -437,12 +433,30 @@ static void txt_putchar(const char c)
 /* ANSI */
 static inline void set_fg(const uint8_t col)
 {
-	cur_col &= col;
+	cur_attr &= col;
 }
 
 static inline void set_bg(const uint8_t col)
 {
-	cur_col &= col << 4;
+	cur_attr &= col << 4;
+}
+
+static void set_reversed(void)
+{
+	const uint8_t fg = cur_attr & 0x0F;
+	const uint8_t bg = (cur_attr >> 4) & 0x0F;
+}
+
+static inline void set_bold(const bool in)
+{
+	if (in)
+	{
+		cur_attr &= ~(1 << 15);
+	}
+	else
+	{
+		cur_attr |= (1 << 15);
+	}
 }
 
 static uint64_t ansi_interpreter(char * cp)
@@ -519,7 +533,19 @@ static uint64_t ansi_interpreter(char * cp)
 			// undefined - this driver does not have a scrollback buffer
 			break;
 		case 'm':
-			if (cou >= 30 && cou <= 37)
+			if (cou == 1)
+			{
+				set_bold(true);
+			}
+			else if (cou == 7)
+			{
+				set_reversed();
+			}
+			else if (cou == 22)
+			{
+				set_bold(false);
+			}
+			else if (cou >= 30 && cou <= 37)
 			{
 				set_fg(cou - 30);
 			}
@@ -567,7 +593,7 @@ static void unitxt_init_txtmode(const uint8_t w, const uint8_t h, const uint8_t 
 	move_cursor(0, 0);
 	
 	buf = txtmode_addr;
-	cur_col = f | b << 4;
+	cur_attr = f | b << 4;
 	
 	txt_set(0, vga_h * vga_w, NULL);
 	
@@ -581,7 +607,7 @@ static void txt_set(const uint8_t start, const uint8_t end, const uint16_t * dt)
 	uint8_t x = start;
 	while (x < end)
 	{
-		buf[x] = dt ? dt[x] : vga_entry(' ', cur_col);
+		buf[x] = dt ? dt[x] : vga_entry(' ', cur_attr);
 		++x;
 	}
 }
