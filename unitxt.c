@@ -27,10 +27,9 @@
 	#include <sys/systm.h>
 	#include <sys/module.h>
 	#include <syslog.h>
-	#if defined(__arm__)
-	#else
-		#include <machine/pio.h>
-	#endif
+	//#if defined(__arm__) || defined(__aarch64__)
+	//#else
+	#include <machine/pio.h>
 	
 	#define _INIT
 	#define _EXIT
