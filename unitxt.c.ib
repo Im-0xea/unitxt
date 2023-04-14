@@ -139,7 +139,6 @@ static inline void _fail(const char * msg)
 
 static int _INIT unitxt_start(void)
 	unitxt_init_txtmode(80, 25, 7, 0, 14, 15)
-	unitxt_init_chardev()
 	
 	return unitxt_init_chardev()
 
