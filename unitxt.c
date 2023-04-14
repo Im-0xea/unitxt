@@ -43,7 +43,6 @@ static uint8_t vga_w, vga_h, cur_x, cur_y, cur_col;
 static uint16_t * buf;
 
 static int major;
-//static struct cdev unitxtcdev
 
 
 /* PROTOTYPES */
@@ -205,7 +204,6 @@ static int unitxt_close(struct inode * inode, struct file * file)
 static ssize_t unitxt_write(struct file * file, const char __user * buf, size_t count, loff_t * offset)
 {
 	char *  data;
-	ssize_t written;
 	
 	if (!(data = kmalloc(count, GFP_KERNEL)))
 	{
@@ -222,8 +220,7 @@ static ssize_t unitxt_write(struct file * file, const char __user * buf, size_t 
 	txt_print(data);
 	
 	kfree(data);
-	written = count;
-	return written;
+	return count;
 }
 
 static ssize_t unitxt_read(struct file * file, char __user * buf, size_t count, loff_t * offset)
