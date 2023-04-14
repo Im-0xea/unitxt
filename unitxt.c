@@ -11,7 +11,11 @@
 	#include <linux/kernel.h>
 	#include <linux/init.h>
 	#include <linux/fs.h>
-	#include <sys/io.h>
+	
+	//#if defined(__arm__) || defined(__aarch64__)
+	#include <asm/io.h>
+	//#else
+	//#include <sys/io.h>
 	
 	#define _INIT __init
 	#define _EXIT __exit
@@ -22,8 +26,11 @@
 	#include <sys/kernel.h>
 	#include <sys/systm.h>
 	#include <sys/module.h>
-	#include <machine/pio.h>
 	#include <syslog.h>
+	#if defined(__arm__)
+	#else
+		#include <machine/pio.h>
+	#endif
 	
 	#define _INIT
 	#define _EXIT
@@ -88,7 +95,7 @@ static void        move_cursor(const uint8_t, const uint8_t);
 
 
 /* UNTILS */
-static inline void _outb(const uint16_t port, const uint8_t value)
+static inline void p_outb(const uint16_t port, const uint8_t value)
 {
 	#if defined(__linux__)
 		outb(value, port);
@@ -97,7 +104,7 @@ static inline void _outb(const uint16_t port, const uint8_t value)
 	#endif
 }
 
-static inline uint8_t _inb(const uint16_t port)
+static inline uint8_t p_inb(const uint16_t port)
 {
 	#if defined(__linux__)
 		return 0;
@@ -107,7 +114,7 @@ static inline uint8_t _inb(const uint16_t port)
 	#endif
 }
 
-static void * _malloc(const size_t size)
+static void * p_malloc(const size_t size)
 {
 	#if defined(__linux__)
 		return kmalloc(size, GFP_KERNEL);
@@ -116,7 +123,7 @@ static void * _malloc(const size_t size)
 	#endif
 }
 
-static int _ucopy(char * dest, char * src, size_t count)
+static int p_ucopy(char * dest, char * src, size_t count)
 {
 	#if defined(__linux__)
 		return copy_from_user(dest, src, count);
@@ -125,7 +132,7 @@ static int _ucopy(char * dest, char * src, size_t count)
 	#endif
 }
 
-static inline void _notice(const char * msg)
+static inline void p_notice(const char * msg)
 {
 	#if defined(__linux__)
 		printk(KERN_INFO "%s\n", msg);
@@ -134,7 +141,7 @@ static inline void _notice(const char * msg)
 	#endif
 }
 
-static inline void _fail(const char * msg)
+static inline void p_fail(const char * msg)
 {
 	#if defined(__linux__)
 		printk(KERN_ERR "%s\n", msg);
@@ -258,9 +265,9 @@ static ssize_t unitxt_write(struct file * file, const char __user * buf, size_t 
 {
 	char *  data;
 	
-	if (!(data = _malloc(count)))
+	if (!(data = p_malloc(count)))
 	{
-		_fail("failed to allocate");
+		p_fail("failed to allocate");
 		return -ENOMEM;
 	}
 	
@@ -293,7 +300,7 @@ static ssize_t unitxt_read(struct file * file, char __user * buf, size_t count, 
 	
 	if (copy_to_user(buf, msg + *offset, count))
 	{
-		_fail("copying to userspace failed");
+		p_fail("copying to userspace failed");
 		return -EFAULT;
 	}
 	
@@ -505,7 +512,7 @@ static void unitxt_init_txtmode(const uint8_t w, const uint8_t h, const uint8_t 
 	txt_set(0, vga_h * vga_w, NULL);
 	
 	def_cur(start_cur, end_cur);
-	_notice("unitxt initialized");
+	p_notice("unitxt initialized");
 }
 // init_txtmode(80, 25, 7, 0, 14, 15)
 
@@ -521,19 +528,19 @@ static void txt_set(const uint8_t start, const uint8_t end, const uint16_t * dt)
 
 static void def_cur(const uint8_t cur_start, const uint8_t cur_end)
 {
-	_outb(0x3D4, 0x0A);
-	_outb(0x3D5, (_inb(0x3D5) & 0xC0) | cur_start);
-	_outb(0x3D4, 0x0B);
-	_outb(0x3D5, (_inb(0x3D5) & 0xE0) | cur_end);
+	p_outb(0x3D4, 0x0A);
+	p_outb(0x3D5, (_inb(0x3D5) & 0xC0) | cur_start);
+	p_outb(0x3D4, 0x0B);
+	p_outb(0x3D5, (_inb(0x3D5) & 0xE0) | cur_end);
 }
 
 static void set_cur(const uint8_t x, const uint8_t y)
 {
 	const uint16_t pos = y * vga_w + x;
-	_outb(0x3D4, 0x0F);
-	_outb(0x3D5, (uint8_t) (pos & 0xFF));
-	_outb(0x3D4, 0x0E);
-	_outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF));
+	p_outb(0x3D4, 0x0F);
+	p_outb(0x3D5, (uint8_t) (pos & 0xFF));
+	p_outb(0x3D4, 0x0E);
+	p_outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF));
 }
 
 static void move_cursor(const uint8_t x, const uint8_t y)
