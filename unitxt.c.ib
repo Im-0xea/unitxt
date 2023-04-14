@@ -32,16 +32,16 @@
 
 
 /* CONSTANTS */
-#define DEVICE_NAME "unitxt"
+#define DEVICE_NAME  "unitxt"
 static const uint8_t tab_size = 8
-static uint16_t * txtmode_addr = (uint16_t *) 0xB8000
+static uint16_t *    txtmode_addr = (uint16_t *) 0xB8000
 
 
 /* GLOBALS */
-static uint8_t vga_w, vga_h, cur_x, cur_y, cur_col
+static uint8_t    vga_w, vga_h, cur_x, cur_y, cur_col
 static uint16_t * buf
 
-static int major
+static int        major
 
 
 /* PROTOTYPES */
@@ -73,10 +73,10 @@ static void        move_cursor(const uint8_t, const uint8_t)
 
 /* MODULE SETUP */
 #if defined(__linux__)
-	MODULE_LICENSE("CC0")
-	MODULE_AUTHOR("Niki")
+	MODULE_LICENSE    ("CC0")
+	MODULE_AUTHOR     ("Niki")
 	MODULE_DESCRIPTION("An alternative VGA textmode driver")
-	MODULE_VERSION("0.1")
+	MODULE_VERSION    ("0.1")
 	
 	module_init(unitxt_start)
 	module_exit(unitxt_end)
