@@ -11,6 +11,7 @@
 	#include <linux/kernel.h>
 	#include <linux/init.h>
 	#include <linux/fs.h>
+	#include <linux/string.h>
 	
 	//#if defined(__arm__) || defined(__aarch64__)
 	#include <asm/io.h>
@@ -260,58 +261,106 @@ static int unitxt_stop_chardev(void)
 	}
 #endif
 
-static ssize_t unitxt_write(struct file * file, const char __user * buf, size_t count, loff_t * offset)
-{
-	char *  data;
-	
-	if (!(data = p_malloc(count)))
+#if defined(__linux__)
+	static ssize_t unitxt_write(struct file * file, const char __user * buf, size_t count, loff_t * offset)
 	{
-		p_fail("failed to allocate");
-		return -ENOMEM;
-	}
-	
-	if (copy_from_user(data, buf, count))
-	{
+		char *  data;
+		
+		if (!(data = p_malloc(count)))
+		{
+			p_fail("failed to allocate");
+			return -ENOMEM;
+		}
+		
+		if (copy_from_user(data, buf, count))
+		{
+			kfree(data);
+			return -EFAULT;
+		}
+		
+		txt_print(data);
+		
 		kfree(data);
-		return -EFAULT;
+		return count;
 	}
 	
-	txt_print(data);
-	
-	kfree(data);
-	return count;
-}
-
-static ssize_t unitxt_read(struct file * file, char __user * buf, size_t count, loff_t * offset)
-{
-	const char   msg[] = "Unitxt Running";
-	const size_t len   = strlen(msg);
-	
-	if (*offset >= len)
+	static ssize_t unitxt_read(struct file * file, char __user * buf, size_t count, loff_t * offset)
 	{
+		const char   msg[] = "Unitxt Running\n";
+		const size_t len   = strlen(msg);
+		
+		if (*offset >= len)
+		{
+			return 0;
+		}
+		
+		if (count > len - *offset)
+		{
+			count = len - *offset;
+		}
+		
+		if (copy_to_user(buf, msg + *offset, count))
+		{
+			p_fail("copying to userspace failed");
+			return -EFAULT;
+		}
+		
+		*offset += count;
+		
+		return count;
+	}
+#elif defined(__NetBSD__) || defined(__OpenBSD__)
+	int unitxt_write(dev_t dev, struct uio *uio, int flags)
+	{
+		char buf[256];
+		int error = 0;
+		int amount;
+		
+		amount = MIN(uio->uio_resid, sizeof(buf));
+		error = uiomove(buf, amount, uio);
+		if (error)
+		{
+			return error;
+		}
+		
+		txt_print(buf);
+		
 		return 0;
 	}
-	
-	if (count > len - *offset)
+	int my_read(dev_t dev, struct uio *uio, int flags)
 	{
-		count = len - *offset;
+		const char* message = "Unitxt Running\n";
+		size_t message_len = strlen(message);
+		
+		int error = 0;
+		
+		error = uiomove((void*)message, message_len, uio);
+		if (error)
+		{
+			return error;
+		}
+		
+		return 0;
 	}
-	
-	if (copy_to_user(buf, msg + *offset, count))
-	{
-		p_fail("copying to userspace failed");
-		return -EFAULT;
-	}
-	
-	*offset += count;
-	
-	return count;
-}
+#endif
+
 
 /* TEXTMODE INTERFACE */
 static inline uint8_t vga_entry(const unsigned char c, const uint8_t col)
 {
 	return (uint16_t) c | (uint16_t) col << 8;
+}
+
+void txt_printf(const char * fmt, ...)
+{
+	char buf[256];
+	va_list args;
+	
+	va_start(args, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, args);
+	va_end(args);
+	
+	txt_print(buf);
 }
 
 static void txt_print(char * str)
@@ -481,6 +530,13 @@ static uint64_t ansi_interpreter(char * cp)
 			{
 				set_bg((cou - 100) + 8);
 			}
+			break;
+		case 'n':
+			if (cou == 6)
+			{
+				txt_printf("^[[%d;%dR", cur_y, cur_x);
+			}
+			break;
 	}
 	return mv;
 }
