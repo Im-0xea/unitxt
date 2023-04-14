@@ -7,6 +7,7 @@
 #if defined(__linux__)
 	#include <linux/types.h>
 	#include <linux/module.h>
+	#include <linux/slab.h>
 	#include <linux/kernel.h>
 	#include <linux/init.h>
 	#include <linux/fs.h>
@@ -40,31 +41,34 @@ static uint16_t * txtmode_addr = (uint16_t *) 0xB8000
 static uint8_t vga_w, vga_h, cur_x, cur_y, cur_col
 static uint16_t * buf
 
-static int major;
-static struct cdev unitxtcdev;
+static int major
+//static struct cdev unitxtcdev
 
 
 /* PROTOTYPES */
 static int  _INIT unitxt_start(void)
 static void _EXIT unitxt_end(void)
 static int        unitxt_init_chardev(void)
-void              unitxt_init_txtmode(const uint8_t, const uint8_t, const uint8_t, const uint8_t, const uint8_t, const uint8_t)
-void              unitxt_print(char *)
+static void       unitxt_init_txtmode(const uint8_t, const uint8_t, const uint8_t, const uint8_t, const uint8_t, const uint8_t)
+static void              txt_print(char *)
 #if defined(__linux__)
 	static int    unitxt_open(struct inode *, struct file *)
 	static int    unitxt_close(struct inode *, struct file *)
-	static size_t unitxt_read(struct file *, char __user *, size_t, loff_ *)
-	static size_t unitxt_write(struct file *, char __user *, size_t, loff_ *)
+	static ssize_t unitxt_read(struct file *, char __user *, size_t, loff_t *)
+	static ssize_t unitxt_write(struct file *, const char __user *, size_t, loff_t *)
 #elif defined(__NetBSD__) || defined(__OpenBSD__)
 	static int    unitxt_open(dev_t, int, int, struct lwp *)
 	static int    unitxt_close(dev_t, int, int, struct lwp *)
 	static int    unitxt_write(dev_t, struct uio *, int)
 	static int    unitxt_read(dev_t, struct uio *, int)
-static void       txt_print(char *)
 static void       txt_putchar(const char)
 static void       txt_set(const uint8_t, const uint8_t, const uint16_t *)
 static uint64_t   ansi_interpreter(char *)
 static uint64_t   read_num(char **, uint8_t *)
+static void       shift_ln(void)
+static void       def_cur(const uint8_t, const uint8_t)
+static void       set_cur(const uint8_t, const uint8_t)
+static void       move_cursor(const uint8_t, const uint8_t)
 
 
 /* MODULE SETUP */
@@ -115,7 +119,7 @@ static inline void _fail(const char * msg)
 		return 0
 
 static int _INIT unitxt_start(void)
-	init_txtmode(80, 25, 7, 0, 14, 15)
+	unitxt_init_txtmode(80, 25, 7, 0, 14, 15)
 	
 	return unitxt_init_chardev()
 
@@ -126,17 +130,17 @@ static void _EXIT unitxt_end(void)
 /* CHAR DEV */
 #if defined(__linux__)
 	static struct file_operations unitxt_fops =
-		owner    = THIS_MODULE
-		open     = unitxt_open
-		release  = unitxt_close
-		read     = unitxt_read
-		write    = unitxt_write
+		.owner    = THIS_MODULE
+		.open     = unitxt_open
+		.release  = unitxt_close
+		.read     = unitxt_read
+		.write    = unitxt_write
 #elif defined(__NetBSD__) || defined(__OpenBSD__)
 	static struct cdevsw unitxt_cdevsw =
-		.d_open  = unitxt_open
-		.d_close = unitxt_close
-		.d_read  = unitxt_read
-		.d_write = unitxt_write
+		.d_open   = unitxt_open
+		.d_close  = unitxt_close
+		.d_read   = unitxt_read
+		.d_write  = unitxt_write
 		
 		.d_ioctl    = noioctl
 		.d_stop     = nostop
@@ -148,7 +152,7 @@ static void _EXIT unitxt_end(void)
 		.d_flag     = D_OTHER
 
 static int unitxt_init_chardev(void)
-	major = register_chrdev(0, DEVICE_NAME, &fops
+	major = register_chrdev(0, DEVICE_NAME, &unitxt_fops)
 	return 0
 
 static int unitxt_open(struct inode * inode, struct file * file)
@@ -157,11 +161,11 @@ static int unitxt_open(struct inode * inode, struct file * file)
 static int unitxt_close(struct inode * inode, struct file * file)
 	return 0
 
-static size_t unitxt_write(struct file * file, char __user * buf, size_t count, loff_ * offset)
+static ssize_t unitxt_write(struct file * file, const char __user * buf, size_t count, loff_t * offset)
 	char *  data
 	ssize_t written
 	
-	if (!(date = kmalloc(count, GFP_KERNEL))
+	if (!(data = kmalloc(count, GFP_KERNEL)))
 		_fail("failed to allocate")
 		return -ENOMEM
 	
@@ -169,15 +173,15 @@ static size_t unitxt_write(struct file * file, char __user * buf, size_t count, 
 		kfree(data)
 		return -EFAULT
 	
-	unitxt_print(data)
+	txt_print(data)
 	
 	kfree(data)
 	written = count
 	return written
 
-static size_t unitxt_read(struct file * file, char __user * buf, size_t count, loff_ * offset)
-	const char   msg = "Unitxt Running"
-	const size_t len = strlen(msg)
+static ssize_t unitxt_read(struct file * file, char __user * buf, size_t count, loff_t * offset)
+	const char   msg[] = "Unitxt Running"
+	const size_t len   = strlen(msg)
 	
 	if (*offset >= len)
 		return 0
@@ -194,6 +198,9 @@ static size_t unitxt_read(struct file * file, char __user * buf, size_t count, l
 	return count
 
 /* TEXTMODE INTERFACE */
+static inline uint8_t vga_entry(const unsigned char c, const uint8_t col)
+	return (uint16_t) c | (uint16_t) col << 8
+
 static void txt_print(char * str)
 	uint64_t c = 0
 	uint8_t flags = 0x00
@@ -224,7 +231,7 @@ static void txt_putchar(const char c)
 		case '\b':
 			if (cur_x != 0)
 				--cur_x
-				set(sp - 1, sp, NULL)
+				txt_set(sp - 1, sp, NULL)
 				set_cur(cur_x, cur_y)
 			break
 		case '\t':
@@ -235,10 +242,16 @@ static void txt_putchar(const char c)
 			break
 		default:
 			const uint16_t ent = vga_entry(c, cur_col)
-			set(sp, sp + 1, &ent)
+			txt_set(sp, sp + 1, &ent)
 
 
 /* ANSI */
+static inline void set_fg(const uint8_t col)
+	cur_col &= col
+
+static inline void set_bg(const uint8_t col)
+	cur_col &= col << 4
+
 static uint64_t ansi_interpreter(char * cp)
 	uint64_t mv  = 0
 	uint8_t  cou = 1
@@ -336,15 +349,6 @@ static void unitxt_init_txtmode(const uint8_t w, const uint8_t h, const uint8_t 
 	def_cur(start_cur, end_cur)
 	_notice("unitxt initialized")
 // init_txtmode(80, 25, 7, 0, 14, 15)
-
-static inline uint8_t vga_entry(const unsigned char c, const uint8_t col)
-	return (uint16_t) c | (uint16_t) col << 8
-
-static inline void set_fg(const uint8_t col)
-	cur_col &= col
-
-static inline void set_bg(const uint8_t col)
-	cur_col &= col << 4
 
 static void txt_set(const uint8_t start, const uint8_t end, const uint16_t * dt)
 	uint8_t x = start
