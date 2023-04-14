@@ -55,10 +55,11 @@ static int        major;
 /* PROTOTYPES */
 static int  _INIT  unitxt_start(void);
 static void _EXIT  unitxt_end(void);
+static void        formater(void (*d_print)(char *), const char * fmt, ...);
+static void        txt_print(char *);
 static int         unitxt_init_chardev(void);
 static int         unitxt_stop_chardev(void);
 static void        unitxt_init_txtmode(const uint8_t, const uint8_t, const uint8_t, const uint8_t, const uint8_t, const uint8_t);
-static void        txt_print(char *);
 #if defined(__linux__)
 	static int     unitxt_open(struct inode *, struct file *);
 	static int     unitxt_close(struct inode *, struct file *);
