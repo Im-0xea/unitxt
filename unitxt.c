@@ -45,8 +45,11 @@ static uint16_t *    txtmode_addr = (uint16_t *) 0xB8000;
 static uint8_t    vga_w, vga_h, cur_x, cur_y, cur_attr;
 static uint16_t * buf;
 
-static int        major;
-
+#if defined(__linux__)
+	static int        major = 0;
+#elif defined(__NetBSD__) || defined(__OpenBSD__)
+	static devmajor_t major = 0;
+#endif
 
 /* PROTOTYPES */
 static int  _INIT  unitxt_start(void);
@@ -79,7 +82,7 @@ static void        move_cursor(const uint8_t, const uint8_t);
 
 /* MODULE SETUP */
 #if defined(__linux__)
-	MODULE_LICENSE     ("CC0");
+	MODULE_LICENSE     ("Dual BSD/GPL");
 	MODULE_AUTHOR      ("Niki");
 	MODULE_DESCRIPTION ("An alternative VGA textmode driver");
 	MODULE_VERSION     ("0.1");
@@ -132,7 +135,7 @@ static int p_ucopy(char * dest, char * src, size_t count)
 static inline void p_notice(char * msg)
 {
 	#if defined(__linux__)
-		printk(KERN_INFO "%s\n", msg);
+		printk(KERN_INFO "unitxt: %s\n", msg);
 	#elif defined(__NetBSD__) || defined(__OpenBSD__)
 		kern_msg(LOG_NOTICE, msg);
 	#endif
@@ -141,7 +144,7 @@ static inline void p_notice(char * msg)
 static inline void p_fail(char * msg)
 {
 	#if defined(__linux__)
-		printk(KERN_ERR "%s\n", msg);
+		printk(KERN_ERR "unitxt: %s\n", msg);
 	#elif defined(__NetBSD__) || defined(__OpenBSD__)
 		kern_msg(LOG_ERR, msg);
 	#endif
@@ -217,15 +220,8 @@ static void _EXIT unitxt_end(void)
 		.d_close  = unitxt_close,
 		.d_read   = unitxt_read,
 		.d_write  = unitxt_write,
-		
-		.d_ioctl    = noioctl,
-		.d_stop     = nostop,
-		.d_tty      = notty,
-		.d_poll     = nopoll,
-		.d_mmap     = nommap,
-		.d_kqfilter = nokqfilter,
-		.d_discard  = nodiscard,
-		.d_flag     = D_OTHER
+		.d_name   = DEVICE_NAME,
+		.d_type   = D_TTY
 	};
 #endif
 
@@ -233,10 +229,18 @@ static int unitxt_init_chardev(void)
 {
 	#if defined(__linux__)
 		major = register_chrdev(0, DEVICE_NAME, &unitxt_fops);
-		p_noticef("unitxt chardev on major %d", major);
 	#elif defined(__NetBSD__) || defined(__OpenBSD__)
-		devsw_attach("rperm", NULL, &bmajor, &unitxt_cdevsw, &cmajor);
+		major = devsw_attach(DEVICE_NAME, NULL, &bmajor, &unitxt_cdevsw, &cmajor);
 	#endif
+	if (major >= 0)
+	{
+		p_fail("Failed to register character device");
+		return ENXIO;
+	}
+	else
+	{
+		p_noticef("registered character device on major %d", major);
+	}
 	return 0;
 }
 
@@ -279,7 +283,7 @@ static int unitxt_stop_chardev(void)
 	{
 		char *  data;
 		
-		if (!(data = p_malloc(count)))
+		if (!(data = p_malloc(count + 1)))
 		{
 			p_fail("failed to allocate");
 			return -ENOMEM;
@@ -291,9 +295,13 @@ static int unitxt_stop_chardev(void)
 			return -EFAULT;
 		}
 		
+		data[count] = '\0';
+		
 		txt_print(data);
 		
 		kfree(data);
+		
+		p_notice("write on character device");
 		return count;
 	}
 	
@@ -320,6 +328,7 @@ static int unitxt_stop_chardev(void)
 		
 		*offset += count;
 		
+		p_notice("read on character device");
 		return count;
 	}
 #elif defined(__NetBSD__) || defined(__OpenBSD__)
@@ -387,6 +396,7 @@ static void txt_print(char * str)
 		else
 		{
 			txt_putchar(c);
+			++c;
 		}
 	}
 }
@@ -598,7 +608,7 @@ static void unitxt_init_txtmode(const uint8_t w, const uint8_t h, const uint8_t 
 	txt_set(0, vga_h * vga_w, NULL);
 	
 	def_cur(start_cur, end_cur);
-	p_notice("unitxt initialized");
+	p_notice("textmode initialized");
 }
 // init_txtmode(80, 25, 7, 0, 14, 15)
 
@@ -607,7 +617,7 @@ static void txt_set(const uint8_t start, const uint8_t end, const uint16_t * dt)
 	uint8_t x = start;
 	while (x < end)
 	{
-		buf[x] = dt ? dt[x] : vga_entry(' ', cur_attr);
+		//buf[x] = dt ? dt[x] : vga_entry(' ', cur_attr)
 		++x;
 	}
 }
@@ -615,9 +625,9 @@ static void txt_set(const uint8_t start, const uint8_t end, const uint16_t * dt)
 static void def_cur(const uint8_t cur_start, const uint8_t cur_end)
 {
 	p_outb(0x3D4, 0x0A);
-	p_outb(0x3D5, (_inb(0x3D5) & 0xC0) | cur_start);
+	p_outb(0x3D5, (p_inb(0x3D5) & 0xC0) | cur_start);
 	p_outb(0x3D4, 0x0B);
-	p_outb(0x3D5, (_inb(0x3D5) & 0xE0) | cur_end);
+	p_outb(0x3D5, (p_inb(0x3D5) & 0xE0) | cur_end);
 }
 
 static void set_cur(const uint8_t x, const uint8_t y)
