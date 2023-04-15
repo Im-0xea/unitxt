@@ -19,12 +19,19 @@
 	#define _EXIT __exit
 #elif defined(__NetBSD__) || defined(__OpenBSD__)
 	#include <sys/types.h>
+	#include <sys/kmem.h>
+	#include <sys/uio.h>
 	#include <sys/conf.h>
 	#include <sys/device.h>
+	#include <sys/param.h>
+	#include <sys/cdefs.h>
+	#include <sys/cprng.h>
+	#include <sys/conf.h>
+	#include <sys/stat.h>
 	#include <sys/kernel.h>
 	#include <sys/systm.h>
 	#include <sys/module.h>
-	#include <syslog.h>
+	#include <sys/syslog.h>
 	
 	#include <machine/pio.h>
 	
@@ -99,10 +106,10 @@ static inline void p_outb(const uint16_t port, const uint8_t value)
 
 static inline uint8_t p_inb(const uint16_t port)
 	#if defined(__linux__)
-		return 0
+		return inb(port)
 		//return outb(value, port)
 	#elif defined(__NetBSD__) || defined(__OpenBSD__)
-		return outb(port, value)
+		return inb(port)
 
 static void * p_malloc(const size_t size)
 	#if defined(__linux__)
@@ -114,19 +121,19 @@ static int p_ucopy(char * dest, char * src, size_t count)
 	#if defined(__linux__)
 		return copy_from_user(dest, src, count)
 	#elif defined(__NetBSD__) || defined(__OpenBSD__)
-		uio.move(dest, count)
+		//uio.move(dest, count)
 
 static inline void p_notice(char * msg)
 	#if defined(__linux__)
 		printk(KERN_INFO "unitxt: %s\n", msg)
 	#elif defined(__NetBSD__) || defined(__OpenBSD__)
-		kern_msg(LOG_NOTICE, msg)
+		printf("unitxt: %s\n", msg)
 
 static inline void p_fail(char * msg)
 	#if defined(__linux__)
 		printk(KERN_ERR "unitxt: %s\n", msg)
 	#elif defined(__NetBSD__) || defined(__OpenBSD__)
-		kern_msg(LOG_ERR, msg)
+		printf("unitxt: %s\n", msg)
 
 #define p_failf(fmt, ...) formater(p_fail, fmt, ##__VA_ARGS__)
 #define p_noticef(fmt, ...) formater(p_notice, fmt, ##__VA_ARGS__)
@@ -175,6 +182,7 @@ static void _EXIT unitxt_end(void)
 		.read     = unitxt_read
 		.write    = unitxt_write
 #elif defined(__NetBSD__) || defined(__OpenBSD__)
+	dev_t unitxt_dev
 	dev_type_open(unitxt_open)
 	dev_type_close(unitxt_close)
 	dev_type_write(unitxt_write)
@@ -184,14 +192,20 @@ static void _EXIT unitxt_end(void)
 		.d_close  = unitxt_close
 		.d_read   = unitxt_read
 		.d_write  = unitxt_write
-		.d_name   = DEVICE_NAME
-		.d_type   = D_TTY
+		.d_ioctl = noioctl
+		.d_stop = nostop
+		.d_tty = notty
+		.d_poll = nopoll
+		.d_mmap = nommap
+		.d_kqfilter = nokqfilter
+		.d_discard = nodiscard
+		.d_flag = D_OTHER
 
 static int unitxt_init_chardev(void)
 	#if defined(__linux__)
 		major = register_chrdev(0, DEVICE_NAME, &unitxt_fops)
 	#elif defined(__NetBSD__) || defined(__OpenBSD__)
-		major = devsw_attach(DEVICE_NAME, NULL, &bmajor, &unitxt_cdevsw, &cmajor)
+		devsw_attach(DEVICE_NAME, NULL, &major, &unitxt_cdevsw, NULL)
 	if (major >= 0)
 		p_fail("Failed to register character device")
 		return ENXIO
@@ -273,7 +287,7 @@ static int unitxt_stop_chardev(void)
 		txt_print(buf)
 		
 		return 0
-	int my_read(dev_t dev, struct uio *uio, int flags)
+	int unitxt_read(dev_t dev, struct uio *uio, int flags)
 		const char* message = "Unitxt Running\n"
 		size_t message_len = strlen(message)
 		
@@ -308,6 +322,7 @@ static void txt_print(char * str)
 
 static void txt_putchar(const char c)
 	const uint16_t sp = (cur_y * vga_w) + cur_x
+	uint16_t ent
 	switch (c)
 		case '\r':
 			cur_x = 0
@@ -331,7 +346,7 @@ static void txt_putchar(const char c)
 				shift_ln()
 			break
 		default:
-			const uint16_t ent = vga_entry(c, cur_attr)
+			ent = vga_entry(c, cur_attr)
 			txt_set(sp, sp + 1, &ent)
 
 
@@ -481,8 +496,8 @@ static void set_cur(const uint8_t x, const uint8_t y)
 	p_outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF))
 
 static void move_cursor(const uint8_t x, const uint8_t y)
-	cur_x = min(x, vga_w)
-	cur_y = min(y, vga_h)
+	cur_x = MIN(x, vga_w)
+	cur_y = MIN(y, vga_h)
 	set_cur(x, y)
 
 static void shift_ln(void)

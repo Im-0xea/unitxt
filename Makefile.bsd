@@ -1,0 +1,6 @@
+CFLAGS= -I/usr/include
+
+KMOD= unitxt
+SRCS= unitxt.o
+
+.include <bsd.kmodule.mk>
