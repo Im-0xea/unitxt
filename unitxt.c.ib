@@ -2,6 +2,12 @@
  *  unitxt  *
  *          */
 
+/* CONSTANTS */
+#define TAB_STOP     4
+#define DEVICE_MAJOR 420
+#define DEVICE_NAME  "unitxt"
+#define TXTMODE_ADDR 0xb8000
+
 
 /* INCLUDES */
 #if defined(__linux__)
@@ -11,6 +17,7 @@
 	#include <linux/kernel.h>
 	#include <linux/init.h>
 	#include <linux/fs.h>
+	#include <linux/cdev.h>
 	#include <linux/string.h>
 	
 	#include <asm/io.h>
@@ -41,20 +48,16 @@
 	#error unsupported system
 
 
-/* CONSTANTS */
-#define DEVICE_NAME  "unitxt"
-static const uint8_t tab_size = 8
-static uint16_t *    txtmode_addr = (uint16_t *) 0xB8000
-
-
 /* GLOBALS */
 static uint8_t    vga_w, vga_h, cur_x, cur_y, cur_attr
 static uint16_t * buf
+static const uint8_t tab_size = TAB_STOP
+static uint16_t *    txtmode_addr = (uint16_t *) 0xB8000
 
 #if defined(__linux__)
-	static int        major = 0
+	static const int  major =       DEVICE_MAJOR
 #elif defined(__NetBSD__) || defined(__OpenBSD__)
-	static devmajor_t major = 0
+	static const devmajor_t major = DEVICE_MAJOR
 
 /* PROTOTYPES */
 static int  _INIT  unitxt_start(void)
@@ -98,6 +101,7 @@ static void        move_cursor(const uint8_t, const uint8_t)
 
 
 /* UNTILS */
+#define MINI(a, b) ((a) < (b) ? (a) : (b))
 static inline void p_outb(const uint16_t port, const uint8_t value)
 	#if defined(__linux__)
 		outb(value, port)
@@ -175,6 +179,8 @@ static void _EXIT unitxt_end(void)
 
 /* CHAR DEV */
 #if defined(__linux__)
+	static dev_t unitxt_dev_num
+	static struct cdev unitxt_dev
 	static struct file_operations unitxt_fops =
 		.owner    = THIS_MODULE
 		.open     = unitxt_open
@@ -202,15 +208,21 @@ static void _EXIT unitxt_end(void)
 		.d_flag = D_OTHER
 
 static int unitxt_init_chardev(void)
+	int err
 	#if defined(__linux__)
-		major = register_chrdev(0, DEVICE_NAME, &unitxt_fops)
+		unitxt_dev_num = MKDEV(major, 0)
+		err = register_chrdev_region(unitxt_dev_num, 1, DEVICE_NAME)
+		if (err != 0)
+			p_fail("Failed to register character device")
+			return err
+		cdev_init(&unitxt_dev, &unitxt_fops)
+		err = cdev_add(&unitxt_dev, unitxt_dev_num, 1)
+		if (err < 0)
+			p_fail("Failed to register character device")
+			return err
 	#elif defined(__NetBSD__) || defined(__OpenBSD__)
 		devsw_attach(DEVICE_NAME, NULL, &major, &unitxt_cdevsw, NULL)
-	if (major >= 0)
-		p_fail("Failed to register character device")
-		return ENXIO
-	else
-		p_noticef("registered character device on major %d", major)
+	p_noticef("registered character device on major %d", major)
 	return 0
 
 static int unitxt_stop_chardev(void)
@@ -279,7 +291,7 @@ static int unitxt_stop_chardev(void)
 		int error = 0
 		int amount
 		
-		amount = MIN(uio->uio_resid, sizeof(buf))
+		amount = MINI(uio->uio_resid, sizeof(buf))
 		error = uiomove(buf, amount, uio)
 		if (error)
 			return error
@@ -472,7 +484,7 @@ static void unitxt_init_txtmode(const uint8_t w, const uint8_t h, const uint8_t 
 	
 	txt_set(0, vga_h * vga_w, NULL)
 	
-	def_cur(start_cur, end_cur)
+	//def_cur(start_cur, end_cur)
 	p_notice("textmode initialized")
 // init_txtmode(80, 25, 7, 0, 14, 15)
 
@@ -496,8 +508,8 @@ static void set_cur(const uint8_t x, const uint8_t y)
 	p_outb(0x3D5, (uint8_t) ((pos >> 8) & 0xFF))
 
 static void move_cursor(const uint8_t x, const uint8_t y)
-	cur_x = MIN(x, vga_w)
-	cur_y = MIN(y, vga_h)
+	cur_x = MINI(x, vga_w)
+	cur_y = MINI(y, vga_h)
 	set_cur(x, y)
 
 static void shift_ln(void)
