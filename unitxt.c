@@ -4,9 +4,12 @@
 
 /* CONSTANTS */
 #define TAB_STOP     4
-#define DEVICE_MAJOR 420
+#define DEVICE_MINORS 1
+#define DEVICE_MAJOR  420
 #define DEVICE_NAME  "unitxt"
 #define TXTMODE_ADDR 0xb8000
+#define TXTMODE_WIDTH 80
+#define TXTMODE_HEIGHT 25
 
 
 /* INCLUDES */
@@ -198,7 +201,7 @@ static void formater(void (*d_print)(char *), const char * fmt, ...)
 
 static int _INIT unitxt_start(void)
 {
-	unitxt_init_txtmode(80, 25, 7, 0, 14, 15);
+	unitxt_init_txtmode(TXTMODE_WIDTH, TXTMODE_HEIGHT, 7, 0, 14, 15);
 	
 	return unitxt_init_chardev();
 }
